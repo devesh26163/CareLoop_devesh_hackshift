@@ -1,0 +1,64 @@
+name: Deploy CareLoop
+
+# Every push to main deploys the backend (Cloudflare Worker) and then the site (GitHub Pages).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: careloop-deploy
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy Worker
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: backend
+          secrets: |
+            ANTHROPIC_API_KEY
+          command: deploy --var ALLOWED_ORIGIN:https://${{ github.repository_owner }}.github.io
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  site:
+    needs: backend
+    # Still publish the site if the backend step failed; the page then falls back to the sample prescription.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build site folder (only index.html is published; backend/ is not)
+        env:
+          API_URL: ${{ needs.backend.outputs.url }}
+        run: |
+          mkdir _site
+          cp index.html _site/
+          touch _site/.nojekyll
+          if [ -n "$API_URL" ]; then
+            sed -i "s|const API_URL='[^']*'|const API_URL='${API_URL}'|" _site/index.html
+            grep -c "const API_URL='${API_URL}'" _site/index.html
+          else
+            echo "::warning::No Worker URL, so photo reading and dose checks will use the sample."
+          fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: pages
+        uses: actions/deploy-pages@v4

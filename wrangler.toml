@@ -1,0 +1,10 @@
+name = "careloop-api"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# [vars]
+# ALLOWED_ORIGIN is set by the GitHub Actions deploy (https://<owner>.github.io).
+# MODEL = "claude-sonnet-5-5"
+
+# The API key is a secret, not a var. Set it with:
+#   npx wrangler secret put ANTHROPIC_API_KEY
